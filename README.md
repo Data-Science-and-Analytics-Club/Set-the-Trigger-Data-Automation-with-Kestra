@@ -1,6 +1,5 @@
-# Set the Trigger Data Automation with Kestra
-
-A hands-on workshop by Data Science and Analytics Club building a real e-commerce data pipeline from scratch, then automating it with [Kestra](https://kestra.io/).
+# Set the Trigger: Data Automation with Kestra
+A hands-on workshop by Data Science and Analytics Club; building a real e-commerce data pipeline from scratch, then automating it with [Kestra](https://kestra.io/).
 
 
 ---
@@ -20,7 +19,7 @@ A hands-on workshop by Data Science and Analytics Club building a real e-commerc
 - [Kestra concepts demonstrated](#kestra-concepts-demonstrated)
 - [Troubleshooting](#troubleshooting)
 - [Try It Yourself: Data Quality Challenge](#try-it-yourself-data-quality-challenge)
-
+- [Author](#author)
 
 ---
 
@@ -170,13 +169,13 @@ Save and **Execute**. Inspect the Gantt view and logs — this introduces flow, 
 - id: create_orders
   type: io.kestra.plugin.core.storage.Write
   content: |
-    order_id,product_id,quantity
-    1001,1,2
-    1002,2,1
-    1002,2,1
-    1003,3,3
-    1004,4,1
-    1005,5,-2
+    order_id,product_id,product,quantity,price
+    1001,1,Laptop Stand,2,25.00
+    1002,2,Wireless Mouse,1,15.00
+    1002,2,Wireless Mouse,1,15.00
+    1003,3,USB-C Hub,3,30.00
+    1004,4,Webcam,1,45.00
+    1005,5,Keyboard,-2,40.00
   extension: .csv
 ```
 
@@ -249,7 +248,23 @@ Intentionally contains a duplicate order (`1002`) and an invalid one (negative q
 
 ### 7. Redesign the order source for enrichment
 
-The orders CSV now knows only order ID, product ID, and quantity — product names, categories, and prices come from the API. The join key is `orders.product_id ↔ products.id`.
+So far we've been cheating — the CSV had `product` and `price` hardcoded in it. Real order systems don't work that way: an order only ever records *what* was bought and *how many*, never the product's name or current price (that lives in the product catalog, which can change independently). Drop those two columns to make the CSV realistic again:
+
+```yaml
+- id: create_orders
+  type: io.kestra.plugin.core.storage.Write
+  content: |
+    order_id,product_id,quantity
+    1001,1,2
+    1002,2,1
+    1002,2,1
+    1003,3,3
+    1004,4,1
+    1005,5,-2
+  extension: .csv
+```
+
+The orders CSV now knows only order ID, product ID, and quantity — product names, categories, and prices come from the API instead. The join key is `orders.product_id ↔ products.id`.
 
 ### 8. Join and enrich the two sources
 
@@ -383,8 +398,6 @@ triggers:
     interval: PT5S
     maxAttempts: 3
 ```
-
-
 
 ### 6. Add failure handling
 
@@ -574,16 +587,52 @@ Key output references used throughout:
 
 **Pipeline technically succeeded ≠ data is necessarily correct.**
 
-Extend `clean_orders` (or add a new validation task) to flag or reject:
+Copy your working flow and change the `create_orders` content to this messier file:
+
 ```
-duplicate order_id → invalid
-quantity <= 0       → invalid
-price IS NULL       → invalid
-product_id IS NULL  → invalid
-revenue < 0         → invalid
+order_id,product_id,quantity
+4001,1,2
+4002,2,1
+4003,3,4
+4004,4,1
+4004,4,1
+4005,5,0
+4006,6,3
+4007,,2
+4008,8,2
+4009,9,-3
+4010,10,1
+4011,11,2
+4012,9999,1
+4013,13,1
+4014,14,3
+4015,15,1
+4015,15,1
+4016,16,2
+4017,,1
+4018,18,4
+4019,8888,2
+4020,20,1
 ```
+
+Update `clean_orders` so it rejects orders that have:
+```
+duplicate order_id            → keep the first, reject repeats
+quantity <= 0                 → invalid
+product_id missing            → invalid
+product not found in catalog  → invalid (price is empty after the join)
+```
+
+Write **two files**: `clean_orders.csv` (valid orders) and `rejected_orders.csv` (bad orders, with a `reject_reason` column), and print a short report of total, clean, and rejected rows. The rest of the pipeline must still run.
+
+**Hints**
+```python
+df["col"].isnull()                 # True where a value is missing
+df.duplicated(subset=["order_id"]) # True for repeated copies of an order_id
+df.loc[condition, "reject_reason"] = "some text"
+```
+Remember to list every file you create under `outputFiles`.
 
 
 ---
-
 
